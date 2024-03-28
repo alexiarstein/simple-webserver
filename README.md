@@ -16,7 +16,10 @@ remove the /opt/lexiserver directory (e.g: sudo rm -rf /opt/lexiserver/)
 ## STARTING AND SERVING DOCUMENTS:
 
 The important files are:
-- lexiserver (the server binary)
+- lexiserver (the server binary) 
+- lexiserver-ssl (server binary with SSL Support (WIP)
+- lexiserver-arm64 (server binary for Raspberry Pi)
+- lexiserver-arm64-ssl (server binary with SSL Support for Raspberry Pi)
 - lexiserver.conf (the config file for the server)
 
 Before starting the server, edit the config to change the WEB_ROOT to a directory that you like.

@@ -12,6 +12,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 #define CONFIG_FILE "lexiserver.conf"
 #define BUFFER_SIZE 1024 // solo para los errores y si LBUFSIZE no esta definido en la config. No tiene ningun efecto
@@ -20,7 +22,7 @@
 #define DEFAULT_LPORT 1337
 #define DEFAULT_WEB_ROOT "/tmp/www"
 #define DEFAULT_LBUFSIZE 1024
-#define DEFAULT_LEXISERVER "lexiserver-1.0.2" // No tiene un uso concreto ahora. Es mas un boilerplate que otra cosa en este momento.
+#define DEFAULT_LEXISERVER "lexiserver-1.1.0" // No tiene un uso concreto ahora. Es mas un boilerplate que otra cosa en este momento.
 
 // DEFINE LBUFSIZE COMO UNA CONSTANTE GLOBAL
 const int LBUFSIZE = BUFFER_SIZE;
@@ -53,18 +55,55 @@ void parse_config_file(int *LPORT, char *WEB_ROOT, int *LBUFSIZE, char *LEXISERV
     fclose(file);
 }
 
-void handle_request(int newsockfd, struct sockaddr_in client_addr, const char *WEB_ROOT, int LBUFSIZE);
-void send_file(int sockfd, const char *filepath, int LBUFSIZE);
-void send_error(int sockfd, int status_code, const char *error_page);
+void init_openssl() {
+    SSL_load_error_strings();
+    SSL_library_init();
+    OpenSSL_add_all_algorithms();
+}
+
+SSL_CTX *create_context() {
+    const SSL_METHOD *method;
+    SSL_CTX *ctx;
+
+    method = SSLv23_server_method(); // Use SSLv23_server_method for compatibility
+    ctx = SSL_CTX_new(method);
+    if (!ctx) {
+        perror("Unable to create SSL context");
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+
+    return ctx;
+}
+
+void configure_context(SSL_CTX *ctx) {
+    // Set the certificate file and key file
+    if (SSL_CTX_use_certificate_file(ctx, "server.crt", SSL_FILETYPE_PEM) <= 0) {
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+
+    if (SSL_CTX_use_PrivateKey_file(ctx, "server.key", SSL_FILETYPE_PEM) <= 0) {
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+}
+
+void handle_request(SSL *ssl, const char *WEB_ROOT, int LBUFSIZE);
+void send_file(SSL *ssl, const char *filepath, int LBUFSIZE);
+void send_error(SSL *ssl, int status_code, const char *error_page);
 
 int main() {
     int LPORT, LBUFSIZE;
     char WEB_ROOT[256], LEXISERVER[256];
     parse_config_file(&LPORT, WEB_ROOT, &LBUFSIZE, LEXISERVER);
-// string con string, integrer con integrer y todos felices
+
     printf("* Configuration Loaded:\n* PORT=%d\n* WEB_ROOT=%s\n* BUFFER SIZE=%d\n* LEXISERVER=%s\n", LPORT, WEB_ROOT, LBUFSIZE, LEXISERVER);
 
-    char buffer[LBUFSIZE];
+    init_openssl();
+    SSL_CTX *ctx = create_context();
+    configure_context(ctx);
+
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd == -1) {
         perror("webserver (socket)");
@@ -97,33 +136,45 @@ int main() {
     printf("* Server Listening Connections on Port %d\n", LPORT);
 
     for (;;) {
-        int newsockfd = accept(sockfd, (struct sockaddr *)&host_addr,
-                               (socklen_t *)&host_addrlen);
+        int newsockfd = accept(sockfd, (struct sockaddr *)&host_addr, (socklen_t *)&host_addrlen);
         if (newsockfd < 0) {
             perror("webserver (accept)");
             continue;
         }
         printf("connection accepted\n");
 
-        handle_request(newsockfd, client_addr, WEB_ROOT, LBUFSIZE);
+        SSL *ssl = SSL_new(ctx);
+        SSL_set_fd(ssl, newsockfd);
+
+        if (SSL_accept(ssl) <= 0) {
+            ERR_print_errors_fp(stderr);
+        } else {
+            handle_request(ssl, WEB_ROOT, LBUFSIZE);
+        }
+
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        close(newsockfd);
     }
 
+    close(sockfd);
+    SSL_CTX_free(ctx);
+    cleanup_openssl();
     return 0;
 }
 
-void handle_request(int newsockfd, struct sockaddr_in client_addr, const char *WEB_ROOT, int LBUFSIZE) {
+// Definition of handle_request function
+void handle_request(SSL *ssl, const char *WEB_ROOT, int LBUFSIZE) {
     char buffer[LBUFSIZE];
-    int valread = read(newsockfd, buffer, LBUFSIZE);
+    int valread = SSL_read(ssl, buffer, LBUFSIZE);
     if (valread < 0) {
         perror("webserver (read)");
-        close(newsockfd);
         return;
     }
 
     char method[LBUFSIZE], uri[LBUFSIZE], version[LBUFSIZE];
     sscanf(buffer, "%s %s %s", method, uri, version);
-    printf("[%s:%u] %s %s %s\n", inet_ntoa(client_addr.sin_addr),
-           ntohs(client_addr.sin_port), method, version, uri);
+    printf("[SSL Connection] %s %s %s\n", method, version, uri);
 
     char filepath[LBUFSIZE];
     snprintf(filepath, sizeof(filepath), "%s%s", WEB_ROOT, uri);
@@ -134,16 +185,16 @@ void handle_request(int newsockfd, struct sockaddr_in client_addr, const char *W
     int filefd = open(filepath, O_RDONLY);
     if (filefd < 0) {
         perror("webserver (open)");
-        send_error(newsockfd, 404, "404.html");
-        close(newsockfd);
+        send_error(ssl, 404, "404.html");
         return;
     }
 
-    send_file(newsockfd, filepath, LBUFSIZE);
-    close(newsockfd);
+    send_file(ssl, filepath, LBUFSIZE);
+    close(filefd);
 }
 
-void send_file(int sockfd, const char *filepath, int LBUFSIZE) {
+// Definition of send_file function
+void send_file(SSL *ssl, const char *filepath, int LBUFSIZE) {
     char buffer[LBUFSIZE];
     ssize_t file_size;
     int valwrite;
@@ -157,7 +208,7 @@ void send_file(int sockfd, const char *filepath, int LBUFSIZE) {
     char response_headers[] = "HTTP/1.0 200 OK\r\n"
                               "Server: Lexiserver 1.0.2\r\n"
                               "Content-type: text/html\r\n\r\n";
-    valwrite = write(sockfd, response_headers, strlen(response_headers));
+    valwrite = SSL_write(ssl, response_headers, strlen(response_headers));
     if (valwrite < 0) {
         perror("webserver (write headers)");
         close(filefd);
@@ -165,7 +216,7 @@ void send_file(int sockfd, const char *filepath, int LBUFSIZE) {
     }
 
     while ((file_size = read(filefd, buffer, LBUFSIZE)) > 0) {
-        valwrite = write(sockfd, buffer, file_size);
+        valwrite = SSL_write(ssl, buffer, file_size);
         if (valwrite < 0) {
             perror("webserver (write file)");
             close(filefd);
@@ -176,10 +227,11 @@ void send_file(int sockfd, const char *filepath, int LBUFSIZE) {
     close(filefd);
 }
 
-void send_error(int sockfd, int status_code, const char *error_page) {
+// Definition of send_error function
+void send_error(SSL *ssl, int status_code, const char *error_page) {
     char error_message[256];
     snprintf(error_message, sizeof(error_message), "HTTP/1.0 %d ERROR\r\n\r\n", status_code);
-    write(sockfd, error_message, strlen(error_message));
+    SSL_write(ssl, error_message, strlen(error_message));
 
     char buffer[BUFFER_SIZE];
     size_t bytes_read;
@@ -191,7 +243,7 @@ void send_error(int sockfd, int status_code, const char *error_page) {
     }
 
     while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
-        if (write(sockfd, buffer, bytes_read) < 0) {
+        if (SSL_write(ssl, buffer, bytes_read) < 0) {
             perror("ERROR SENDING ERROR FILE TO CLIENT");
             fclose(file);
             return;
