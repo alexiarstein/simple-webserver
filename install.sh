@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Lexiserver 1.0 - Installation Script
+# Lexiserver 1.1 - Installation Script
 # Author: Alexia Michelle <alexiarstein@aol.com>
 
 # Check if the script is being run as root
@@ -25,6 +25,10 @@ else
             # Copy files to installation directory
             sudo cp -r * /opt/lexiserver/ || { echo "Error copying files to /opt/lexiserver"; exit 1; }
 
+            # Generate SSL certificates
+            echo "Generating SSL certificates..."
+            sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /opt/lexiserver/server.key -out /opt/lexiserver/server.crt || { echo "Error generating SSL certificates"; exit 1; }
+
             # Append system information to 404.html
             uname -a | awk '{print $1,$7,$3,$8,$9}' >> /opt/lexiserver/404.html || { echo "Error updating 404.html"; exit 1; }
             echo -e "</body>\n</html>" >> /opt/lexiserver/404.html
@@ -39,4 +43,5 @@ else
             ;;
     esac
 fi
+
 	
