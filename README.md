@@ -1,5 +1,5 @@
 # LEXISERVER
-A Simple Webserver written in C for Educational Purposes.
+A Simple Webserver written in C with simple SSL support for Educational Purposes.
 
 ## INSTALL
 run (as sudo/root) install.sh (e.g: sudo bash install.sh) this will create /opt/lexiserver/ and move
