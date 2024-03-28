@@ -5,6 +5,11 @@ A Simple Webserver written in C for Educational Purposes.
 run (as sudo/root) install.sh (e.g: sudo bash install.sh) this will create /opt/lexiserver/ and move
 all the files there.
 
+### Raspberri Pi Users
+
+run lexiserver-arm64 instead
+
+
 ## UNINSTALL
 remove the /opt/lexiserver directory (e.g: sudo rm -rf /opt/lexiserver/)
 
@@ -33,9 +38,9 @@ This is a webserver for educational purposes. Do not expose this to the internet
 exactly what you're doing. 
 
 ## TO DO:
-- UTF-8 encoding
 - More Error Pages (only handles 404 at the moment)
 - start, stop, restart arguments
+
 ## Compile your own version
 
 Inside the src directory you will find the current version of lexiserver.c
