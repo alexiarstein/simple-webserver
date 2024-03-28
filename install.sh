@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Lexiserver 1.0 - Installation Script
-# Author: Alexia Michelle <alexia@rockylinux.org>
+# Author: Alexia Michelle <alexiarstein@aol.com>
 
 # Check if the script is being run as root
 if [ "$(whoami)" != "root" ]; then
