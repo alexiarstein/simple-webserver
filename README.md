@@ -1,5 +1,5 @@
 # LEXISERVER
-A Simple Webserver written in C for Educational Purposes.
+A Simple Webserver written in C with simple SSL support for Educational Purposes.
 
 ## INSTALL
 run (as sudo/root) install.sh (e.g: sudo bash install.sh) this will create /opt/lexiserver/ and move
@@ -43,8 +43,8 @@ exactly what you're doing.
 
 ## Compile your own version
 
-Inside the src directory you will find the current version of lexiserver.c
-compile with gcc: ```gcc lexiserver.c -o lexiserver```
+cmake .
+
 move the compiled version to /opt/lexiserver
 
 The binary has to be alongside lexiserver.conf in order to work properly. If the config
