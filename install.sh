@@ -26,7 +26,9 @@ else
             sudo cp -r * /opt/lexiserver/ || { echo "Error copying files to /opt/lexiserver"; exit 1; }
 
             # Append system information to 404.html
-            uname -a | awk '{print $1,$7,$3,$8,$9}' >> /opt/lexiserver/404.html || { echo "Error updating 404.html"; exit 1; }
+sysn=$(head -n 4 /etc/os-release | grep -v "PRETTY" | grep NAME= | awk -F '=' '{print $2}' | sed 's/"//g')
+sysv=$(head -n 4 /etc/os-release |  grep VERSION= | awk -F '=' '{print $2}' | sed 's/"//g')
+echo "$sysn $sysv" >> /opt/lexiserver/404.html || { echo "Error updating 404.html"; exit 1; }
             echo -e "</body>\n</html>" >> /opt/lexiserver/404.html
             echo "Installation complete!"
             echo "To uninstall, remove /opt/lexiserver"
