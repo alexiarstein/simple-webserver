@@ -17,14 +17,17 @@ remove the /opt/lexiserver directory (e.g: sudo rm -rf /opt/lexiserver/)
 
 The important files are:
 - lexiserver (the server binary) 
-- lexiserver-ssl (server binary with SSL Support (WIP)
 - lexiserver-arm64 (server binary for Raspberry Pi)
-- lexiserver-arm64-ssl (server binary with SSL Support for Raspberry Pi)
 - lexiserver.conf (the config file for the server)
 
 Before starting the server, edit the config to change the WEB_ROOT to a directory that you like.
 By default, it looks for html documents inside /tmp/www/. You may need to create this directory
 if you don't have it (you likely don't have it since most webservers use /var/www/html/)
+
+To enable SSL support, all SSL-related variables must be properly configured. It will check if SSL_WEB_ROOT directory exists and is readable if not it will use a default value; certificate an key files are only validated upon server startup.
+
+You will need to get a certificate and key from a CA (Certificate Authority) wich can be obtained from https://letsencrypt.org/ for free or you can create your own using openssl.
+SSL enabled servers will listen for connetions on SSL_PORT and serve documents from the SSL_WEB_ROOT directory, alongside the non-SSL version (two separate processes are created).
 
 To start the server, run ./lexiserver
 
