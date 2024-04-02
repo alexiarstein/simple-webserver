@@ -1,0 +1,58 @@
+LEXISERVER(1)                  User Commands                   LEXISERVER(1)
+
+NAME
+       lexiserver - A Simple Webserver written in C for Educational Purposes
+
+SYNOPSIS
+       lexiserver
+
+DESCRIPTION
+       lexiserver is a simple web server program written in C for educational purposes.
+
+INSTALLATION
+       Run install.sh (e.g., sudo bash install.sh) to create /opt/lexiserver/ and move all the files there.
+
+       For Raspberry Pi users, run lexiserver-arm64 instead.
+
+UNINSTALLATION
+       Remove the /opt/lexiserver directory (e.g., sudo rm -rf /opt/lexiserver/).
+
+STARTING AND SERVING DOCUMENTS
+       Before starting the server, edit the config file lexiserver.conf to change the WEB_ROOT directory.
+
+       By default, the server looks for HTML documents inside /tmp/www/. You may need to create this directory.
+
+       To start the server, run lexiserver.
+
+       If the client doesn't request any page (e.g., hitting localhost:port), it will serve index.html in /tmp/www or the specified directory.
+
+       To stop the server, kill the PID (Process ID) by running ps aux | grep lexiserver and then kill <pid number>.
+
+WARNING
+       This web server is intended for educational purposes. Do not expose it to the internet unless you know what you're doing.
+
+TO DO
+       - Implement more error pages (currently only handles 404).
+       - Add start, stop, restart arguments.
+
+COMPILING YOUR OWN VERSION
+       Compile lexiserver.c with gcc: gcc lexiserver.c -o lexiserver, and move the compiled version to /opt/lexiserver.
+
+       The binary should be alongside lexiserver.conf to work properly. If the config is not present, it will assume defaults.
+
+OTHER NOTES
+       This is a recreational project, not intended for production use. Bugs may exist. Feel free to fork the project, fix bugs, and send merge requests.
+
+       Fork the project at https://github.com/alexiarstein/simple-webserver.
+
+DOCUMENTATION AND INFO
+       Visit [alexia.lat/docs/lexiserver](https://alexia.lat/docs/lexiserver) for documentation and more information.
+
+       For questions or doubts, contact the author via Discord at https://lexi.lat > mis links > discord.
+
+AUTHOR
+       Written by Alexia Michelle <alexiarstein@aol.com>.
+
+Goodbye!
+
+

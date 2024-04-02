@@ -1,0 +1,45 @@
+LEXISERVER.CONF(5)             File Formats             LEXISERVER.CONF(5)
+
+NAME
+       lexiserver.conf - Lexiserver Configuration File
+
+SYNOPSIS
+       /opt/lexiserver/lexiserver.conf
+
+DESCRIPTION
+       The lexiserver.conf file is used to configure the behavior of the Lexiserver web server.
+
+CONFIGURATION OPTIONS
+       LPORT    Port where the server listens for incoming connections. Default is 1337.
+
+       WEB_ROOT Directory where documents and files to be served are stored. Default is /tmp/www/.
+
+       LBUFSIZE Size of the buffer used for reading from or writing to files or sockets, in bytes.
+                Default is 2048.
+
+       LEXISERVER
+                Name of the Lexiserver program. No need to edit this setting.
+
+EXAMPLE
+       # Example configuration file for Lexiserver
+       LPORT=8080
+       WEB_ROOT=/var/www/html/
+       LBUFSIZE=1024
+       LEXISERVER=Lexiserver-1.0.3
+
+FILES
+       /opt/lexiserver/lexiserver.conf
+
+SEE ALSO
+       lexiserver(1)
+
+AUTHOR
+       Written by Alexia Michelle <alexiarstein@aol.com>.
+
+COPYRIGHT
+       This is free software: you are free to change and redistribute it.
+       There is NO WARRANTY, to the extent permitted by law.
+
+Goodbye!
+
+
