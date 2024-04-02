@@ -4,32 +4,19 @@
 // LICENSE: GNU GENERAL PUBLIC LICENSE 3.0 (SEE LICENSE FOR MORE INFO)
 // WEB: https://alexia.lat/docs/lexiserver
 // PROJECT PAGE: https://github.com/alexiarstein/simple-webserver
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#include <arpa/inet.h>
 
-#define CONFIG_FILE "lexiserver.conf"
-#define BUFFER_SIZE 1024 // solo para los errores y si LBUFSIZE no esta definido en la config. No tiene ningun efecto
-
-// SI NO EDITARON LA CONFIG, TOMA ESTOS VALORES POR DEFECTO.
-#define DEFAULT_LPORT 1337
-#define DEFAULT_WEB_ROOT "/tmp/www"
-#define DEFAULT_LBUFSIZE 1024
-#define DEFAULT_LEXISERVER "lexiserver-1.0.2" // No tiene un uso concreto ahora. Es mas un boilerplate que otra cosa en este momento.
+#include "lexiserver.h"
 
 // DEFINE LBUFSIZE COMO UNA CONSTANTE GLOBAL
 const int LBUFSIZE = BUFFER_SIZE;
 
-void parse_config_file(int *LPORT, char *WEB_ROOT, int *LBUFSIZE, char *LEXISERVER) {
+int parse_config_file(struct cfg_struct* config){//int *LPORT, char *WEB_ROOT, int *LBUFSIZE, char *LEXISERVER) {
+    int ret_val = 1;
+
     FILE *file = fopen(CONFIG_FILE, "r");
     if (file == NULL) {
         perror("ERROR OPENING CONFIG. FILE"); // SI NO HAY lexiserver.conf en el mismo lugar que el binario, putea.
-        exit(EXIT_FAILURE);
+        return 0;
     }
 
     char line[256];
@@ -39,48 +26,154 @@ void parse_config_file(int *LPORT, char *WEB_ROOT, int *LBUFSIZE, char *LEXISERV
 
         char key[64], value[256];
         if (sscanf(line, "%63[^=]=%255[^\n]", key, value) == 2) {
-            if (strcmp(key, "LPORT") == 0)
-                *LPORT = atoi(value);
-            else if (strcmp(key, "WEB_ROOT") == 0)
-                strcpy(WEB_ROOT, value);
-            else if (strcmp(key, "LBUFSIZE") == 0)
-                *LBUFSIZE = atoi(value);
+            if (strcmp(key, "LPORT") == 0){
+                if (int_check(value) == 0) {
+                    printf("ERROR PARSING CONFIG. LPORT MUST BE AN INTEGER.\n");
+                    ret_val = 0;
+                    break;
+                }
+                config->LPORT = atoi(value);
+            }
+                
+            else if (strcmp(key, "WEB_ROOT") == 0){
+                if (access(value, F_OK) == -1) {
+                    printf("WARNING: WEB_ROOT path '%s' does not exist. Defaulting to '%s'.\n", value, DEFAULT_WEB_ROOT);
+                    strcpy(config->WEB_ROOT, DEFAULT_WEB_ROOT);
+                } else {
+                    strcpy(config->WEB_ROOT, value);
+                }
+            }
+                
+            else if (strcmp(key, "LBUFSIZE") == 0){
+                if (int_check(value) == 0) {
+                    printf("ERROR PARSING CONFIG. LBUFSIZE MUST BE AN INTEGER.\n");
+                    ret_val = 0;
+                    break;
+                }
+                config->LBUFSIZE = atoi(value);
+            }
+
             else if (strcmp(key, "LEXISERVER") == 0)
-                strcpy(LEXISERVER, value);
+                strcpy(config->LEXISERVER, value);
+            
+            else if (strcmp(key, "SSL_CERT") == 0)
+                strcpy(config->SSL_CERT, value);
+
+            else if (strcmp(key, "SSL_KEY") == 0)
+                strcpy(config->SSL_KEY, value);
+
+            else if (strcmp(key, "SSL_WEB_ROOT") == 0){
+                if (access(value, F_OK) == -1) {
+                    printf("WARNING: SSL_WEB_ROOT path '%s' does not exist. Defaulting to '%s'.\n", value, DEFAULT_WEB_ROOT);
+                    strcpy(config->SSL_WEB_ROOT, DEFAULT_WEB_ROOT);
+                } else {
+                    strcpy(config->SSL_WEB_ROOT, value);
+                }
+            }
+
+            else if (strcmp(key, "SSL_PORT") == 0){
+                if (int_check(value) == 0) {
+                    printf("ERROR PARSING CONFIG. SSL_PORT MUST BE AN INTEGER.\n");
+                    ret_val = 0;
+                    break;
+                }
+                config->SSL_PORT = atoi(value);
+            }
         }
     }
-
+    if (strlen(config->SSL_CERT) > 0 && strlen(config->SSL_KEY) > 0 && strlen(config->SSL_WEB_ROOT) > 0 && config->SSL_PORT > 0) {
+        strcpy(config->USE_SSL, "Y");
+    }
     fclose(file);
+    return ret_val;
 }
 
-void handle_request(int newsockfd, struct sockaddr_in client_addr, const char *WEB_ROOT, int LBUFSIZE);
-void send_file(int sockfd, const char *filepath, int LBUFSIZE);
-void send_error(int sockfd, int status_code, const char *error_page);
+int int_check(char *value) {
+    for (int i = 0; i < strlen(value); i++) {
+        if (isdigit(value[i]) == 0)
+            return 0;
+    }
+    return 1;
+}
 
-int main() {
-    int LPORT, LBUFSIZE;
-    char WEB_ROOT[256], LEXISERVER[256];
-    parse_config_file(&LPORT, WEB_ROOT, &LBUFSIZE, LEXISERVER);
-// string con string, integrer con integrer y todos felices
-    printf("* Configuration Loaded:\n* PORT=%d\n* WEB_ROOT=%s\n* BUFFER SIZE=%d\n* LEXISERVER=%s\n", LPORT, WEB_ROOT, LBUFSIZE, LEXISERVER);
+void init_openssl(void) {
+    SSL_load_error_strings();
+    SSL_library_init();
+    OpenSSL_add_all_algorithms();
+}
 
-    char buffer[LBUFSIZE];
-    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+SSL_CTX *create_context(void) {
+    const SSL_METHOD *method;
+    SSL_CTX *ctx;
+
+    method = SSLv23_server_method(); // Use SSLv23_server_method for compatibility
+    ctx = SSL_CTX_new(method);
+    if (!ctx) {
+        perror("Unable to create SSL context");
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+
+    return ctx;
+}
+
+void configure_context(SSL_CTX *ctx, struct cfg_struct config) {
+    // Set the certificate file and key file
+    if (SSL_CTX_use_certificate_file(ctx, config.SSL_CERT, SSL_FILETYPE_PEM) <= 0) {
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+
+    if (SSL_CTX_use_PrivateKey_file(ctx, config.SSL_KEY, SSL_FILETYPE_PEM) <= 0) {
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+}
+
+int main(void) {
+    struct cfg_struct config;
+    int ssl_child_pid;
+    SSL_CTX *ctx;
+    struct sockaddr_in host_addr;
+    struct sockaddr_in client_addr;
+    int sockfd;
+
+    if (!parse_config_file(&config)) {
+        printf("ERROR LOADING CONFIG. SERVER NOT STARTING.\n");
+        return 1;
+    }
+    
+    // string con string, integrer con integrer y todos felices
+    printf("* Configuration Loaded:\n----------\n* PORT=%d\n* WEB_ROOT=%s\n* BUFFER SIZE=%d\n* LEXISERVER=%s\n", config.LPORT, config.WEB_ROOT, config.LBUFSIZE, config.LEXISERVER);
+
+    if (strcmp(config.USE_SSL, "Y") == 0) {
+        printf("* SSL Enabled\n* SSL port: %d\n* SSL WEB_ROOT: %s\n----------\n", config.SSL_PORT, config.SSL_WEB_ROOT);
+        init_openssl();
+        ctx = create_context();
+        configure_context(ctx, config);
+        // spawn new process to handle SSL connections
+        ssl_child_pid = fork();
+        // if we get a PID, then reconfigure this parent process to use unsecure connection
+        if (ssl_child_pid > 0){
+            strcpy(config.USE_SSL, "N");
+        }
+    }
+    else{
+        printf("* SSL NOT Enabled\n----------\n");
+        ssl_child_pid = 0;
+    }
+    
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd == -1) {
         perror("webserver (socket)");
         return 1;
     }
     printf("* Socket Created [ OK ]\n* Server Listening\n* Lexiserver 1.0.2 https://alexia.lat/docs/lexiserver\n");
 
-    struct sockaddr_in host_addr;
     int host_addrlen = sizeof(host_addr);
-
     host_addr.sin_family = AF_INET;
-    host_addr.sin_port = htons(LPORT);
+    host_addr.sin_port = htons(strcmp(config.USE_SSL, "Y") == 0 ? config.SSL_PORT : config.LPORT);
     host_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-    struct sockaddr_in client_addr;
-    int client_addrlen = sizeof(client_addr);
 
     if (bind(sockfd, (struct sockaddr *)&host_addr, host_addrlen) != 0) {
         perror("webserver (bind)");
@@ -94,36 +187,65 @@ int main() {
         return 1;
     }
 
-    printf("* Server Listening Connections on Port %d\n", LPORT);
+    printf("%s Server Listening Connections on Port %d\n", strcmp(config.USE_SSL, "Y") == 0 ? "* Secure" : "*", strcmp(config.USE_SSL, "Y") == 0 ? config.SSL_PORT : config.LPORT);
 
     for (;;) {
-        int newsockfd = accept(sockfd, (struct sockaddr *)&host_addr,
-                               (socklen_t *)&host_addrlen);
+        int newsockfd = accept(sockfd, (struct sockaddr *)&host_addr, (socklen_t *)&host_addrlen);
         if (newsockfd < 0) {
             perror("webserver (accept)");
             continue;
         }
         printf("connection accepted\n");
+        if (strcmp(config.USE_SSL, "Y") == 0) {
+            SSL *ssl = SSL_new(ctx);
+            SSL_set_fd(ssl, newsockfd);
 
-        handle_request(newsockfd, client_addr, WEB_ROOT, LBUFSIZE);
+            if (SSL_accept(ssl) <= 0) {
+                ERR_print_errors_fp(stderr);
+            } else {
+                handle_request(ssl, 0, client_addr, config.SSL_WEB_ROOT, config.LBUFSIZE);
+            }
+
+            SSL_shutdown(ssl);
+            SSL_free(ssl);
+        } else {
+            handle_request(NULL, newsockfd, client_addr, config.WEB_ROOT, config.LBUFSIZE);
+            close(newsockfd);
+        }
     }
 
+    close(sockfd);
+    SSL_CTX_free(ctx);
     return 0;
 }
 
-void handle_request(int newsockfd, struct sockaddr_in client_addr, const char *WEB_ROOT, int LBUFSIZE) {
+void handle_request(SSL *ssl, int newsockfd, struct sockaddr_in client_addr, const char *WEB_ROOT, int LBUFSIZE) {
     char buffer[LBUFSIZE];
-    int valread = read(newsockfd, buffer, LBUFSIZE);
+    int valread;
+
+    if (newsockfd > 0) {
+        valread = read(newsockfd, buffer, LBUFSIZE);
+    } else {
+        valread = SSL_read(ssl, buffer, LBUFSIZE);
+    }
+
     if (valread < 0) {
         perror("webserver (read)");
-        close(newsockfd);
+        if (newsockfd > 0) {
+            close(newsockfd);
+        }
+
         return;
     }
 
     char method[LBUFSIZE], uri[LBUFSIZE], version[LBUFSIZE];
     sscanf(buffer, "%s %s %s", method, uri, version);
-    printf("[%s:%u] %s %s %s\n", inet_ntoa(client_addr.sin_addr),
-           ntohs(client_addr.sin_port), method, version, uri);
+    if (newsockfd > 0) {
+        printf("[%s:%u] %s %s %s\n", inet_ntoa(client_addr.sin_addr),
+               ntohs(client_addr.sin_port), method, version, uri);
+    } else {
+        printf("[SSL Connection] %s %s %s\n", method, version, uri);
+    }
 
     char filepath[LBUFSIZE];
     snprintf(filepath, sizeof(filepath), "%s%s", WEB_ROOT, uri);
@@ -134,16 +256,24 @@ void handle_request(int newsockfd, struct sockaddr_in client_addr, const char *W
     int filefd = open(filepath, O_RDONLY);
     if (filefd < 0) {
         perror("webserver (open)");
-        send_error(newsockfd, 404, "404.html");
-        close(newsockfd);
+        if (newsockfd > 0) {
+            send_error(NULL, newsockfd, 404, "404.html");
+            close(newsockfd);
+        } else {
+            send_error(ssl, 0, 404, "404.html");
+        }
         return;
     }
 
-    send_file(newsockfd, filepath, LBUFSIZE);
-    close(newsockfd);
+    if (newsockfd > 0) {
+        send_file(NULL, newsockfd, filepath, LBUFSIZE);
+        close(newsockfd);
+    } else {
+        send_file(ssl, 0, filepath, LBUFSIZE);
+    }
 }
 
-void send_file(int sockfd, const char *filepath, int LBUFSIZE) {
+void send_file(SSL *ssl, int sockfd, const char *filepath, int LBUFSIZE) {
     char buffer[LBUFSIZE];
     ssize_t file_size;
     int valwrite;
@@ -157,7 +287,13 @@ void send_file(int sockfd, const char *filepath, int LBUFSIZE) {
     char response_headers[] = "HTTP/1.0 200 OK\r\n"
                               "Server: Lexiserver 1.0.2\r\n"
                               "Content-type: text/html\r\n\r\n";
-    valwrite = write(sockfd, response_headers, strlen(response_headers));
+    
+    if(sockfd > 0) {
+        valwrite = write(sockfd, response_headers, strlen(response_headers));
+    } else {
+        valwrite = SSL_write(ssl, response_headers, strlen(response_headers));
+    }
+
     if (valwrite < 0) {
         perror("webserver (write headers)");
         close(filefd);
@@ -165,7 +301,11 @@ void send_file(int sockfd, const char *filepath, int LBUFSIZE) {
     }
 
     while ((file_size = read(filefd, buffer, LBUFSIZE)) > 0) {
-        valwrite = write(sockfd, buffer, file_size);
+        if(sockfd > 0) {
+            valwrite = write(sockfd, buffer, file_size);
+        } else {
+            valwrite = SSL_write(ssl, buffer, file_size);
+        }
         if (valwrite < 0) {
             perror("webserver (write file)");
             close(filefd);
@@ -176,10 +316,14 @@ void send_file(int sockfd, const char *filepath, int LBUFSIZE) {
     close(filefd);
 }
 
-void send_error(int sockfd, int status_code, const char *error_page) {
+void send_error(SSL *ssl, int sockfd, int status_code, const char *error_page) {
     char error_message[256];
     snprintf(error_message, sizeof(error_message), "HTTP/1.0 %d ERROR\r\n\r\n", status_code);
-    write(sockfd, error_message, strlen(error_message));
+    if (sockfd > 0) {
+        write(sockfd, error_message, strlen(error_message));
+    } else {
+        SSL_write(ssl, error_message, strlen(error_message));
+    }
 
     char buffer[BUFFER_SIZE];
     size_t bytes_read;
@@ -191,7 +335,13 @@ void send_error(int sockfd, int status_code, const char *error_page) {
     }
 
     while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
-        if (write(sockfd, buffer, bytes_read) < 0) {
+        int bytes;
+        if (sockfd > 0) {
+            bytes = write(sockfd, buffer, bytes_read);
+        } else {
+            bytes = SSL_write(ssl, buffer, bytes_read);
+        }
+        if (bytes < 0) {
             perror("ERROR SENDING ERROR FILE TO CLIENT");
             fclose(file);
             return;
